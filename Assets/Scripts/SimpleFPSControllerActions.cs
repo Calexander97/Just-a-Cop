@@ -1,7 +1,9 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SocialPlatforms;
 
 [RequireComponent(typeof(CharacterController))]
 public class SimpleFPSControllerActions : MonoBehaviour
@@ -12,18 +14,16 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
     // Input System
     [Header("Input (Input System)")]
-    public InputActionAsset actionsAsset;     // optional; falls back to KB/M if null
-    public string actionMapName = "Player";   // e.g., "Player" or "Gameplay"
+    public InputActionAsset actionsAsset;     
+    public string actionMapName = "Player";   
     InputAction moveAction, lookAction, jumpAction, slideAction, diveAction;
 
-    // Camera Height
     [Header("Camera Height")]
-    public float eyeLerpSpeed = 12f; // how fast the camera eases to new height
-
-    float camDefaultLocalY;  // remembered at Awake
-    float camSlideLocalY;    // computed from heights
-    float camDiveLocalY;     // computed from heights
-    float camTargetLocalY;   // what we lerp toward
+    public float eyeLerpSpeed = 12f;          // how fast the camera moves to new height
+    float camDefaultLocalY;                   // camera Y when standing
+    float camSlideLocalY;                     // camera Y when sliding
+    float camDiveLocalY;                      // camera Y when diving
+    float camTargetLocalY;                    // current camera Y target
 
     // Look
     [Header("Look")]
@@ -41,7 +41,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
     // Slide
     [Header("Slide")]
-    public KeyCode slideFallbackKey = KeyCode.LeftControl;  // used if no asset
+    public KeyCode slideFallbackKey = KeyCode.LeftControl;  
     public float slideStartBoost = 1.25f;
     public float slideFriction = 6f;
     public float slideDuration = 0.7f;
@@ -49,15 +49,12 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
     // Dive
     [Header("Dive")]
-    public KeyCode diveFallbackKey = KeyCode.LeftAlt;       // used if no asset
+    public KeyCode diveFallbackKey = KeyCode.LeftAlt;       
     public float diveForce = 12f;
     public float diveUpBias = 0.3f;
     public float diveDuration = 0.35f;
     public float diveHeight = 1.2f;
 
-    // Debug HUD
-    [Header("HUD")]
-    public bool showSpeedometer = true;
 
     // Runtime state
     CharacterController cc;
@@ -68,10 +65,11 @@ public class SimpleFPSControllerActions : MonoBehaviour
     bool isSliding, isDiving;
     float slideTimer, diveTimer;
 
-    // Cached inputs (updated each frame)
+    // Stored Inputs
     Vector2 lookInput, moveInput;
     bool jumpPressed, slidePressed, divePressed;
 
+    // Call input data/camera data, set initial camera heights
     void Awake()
     {
         cc = GetComponent<CharacterController>();
@@ -84,14 +82,14 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
         camDefaultLocalY = playerCam ? playerCam.transform.localPosition.y : 0f;
 
-        // Drop the camera by exactly how much the capsule shrinks for slide/dive:
+        // Camera should follow the capsule height change by the same amount
         camSlideLocalY = camDefaultLocalY - (defaultHeight - slideHeight);
         camDiveLocalY = camDefaultLocalY - (defaultHeight - diveHeight);
 
-        // Start with default target
         camTargetLocalY = camDefaultLocalY;
     }
 
+    // Called when enabled, bind to Input Actions if an asset is assigned
     void OnEnable()
     {
         // Bind to Input Actions if provided
@@ -126,11 +124,13 @@ public class SimpleFPSControllerActions : MonoBehaviour
         map.Enable();
     }
 
+    // Called when disabled, disable actions if we were using the asset
     void OnDisable()
     {
         if (actionsAsset != null) actionsAsset.Disable();
     }
 
+    // Per-frame loop: look, move, and move camera to target height
     void Update()
     {
         HandleLook();
@@ -143,14 +143,14 @@ public class SimpleFPSControllerActions : MonoBehaviour
             playerCam.transform.localPosition = lp;
         }
 
-        // one-shot buttons
+        
         jumpPressed = slidePressed = divePressed = false;
     }
 
     // Camera look (yaw on body, pitch on camera)
     void HandleLook()
     {
-        // Use actions if present; else raw mouse delta
+        // Use actions if present, else raw mouse delta
         Vector2 li = (actionsAsset != null && lookAction != null)
             ? lookInput
             : (Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero);
@@ -165,7 +165,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
         if (playerCam) playerCam.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
     }
 
-    // Movement, slide, dive, jump, gravity
+    // Movement state: Walk/air control, slide, dive, jump, gravity
     void HandleMove()
     {
         bool grounded = cc.isGrounded;
@@ -177,8 +177,11 @@ public class SimpleFPSControllerActions : MonoBehaviour
             : ReadKBMoveFallback();
 
         mv = Vector2.ClampMagnitude(mv, 1f);
+
+        // Convert local input to world direction based on player yaw
         Vector3 wishDir = transform.TransformDirection(new Vector3(mv.x, 0f, mv.y));
 
+        // Lerp current horizontal velocity toward desired, with reduced air control
         float control = grounded ? 1f : airControl;
         Vector3 targetHVel = Vector3.Lerp(
             Horizontal(velocity),
@@ -186,12 +189,12 @@ public class SimpleFPSControllerActions : MonoBehaviour
             control * acceleration * Time.deltaTime
         );
 
-        // Slide start
+        // Slide start (requires some speed and ground contact)
         bool slideDown = slidePressed || (actionsAsset == null && Input.GetKeyDown(slideFallbackKey));
         if (!isSliding && !isDiving && grounded && slideDown && Horizontal(velocity).magnitude > 2f)
             StartSlide();
 
-        // Dive start
+        // Dive start (requires some intended motion)
         bool diveDown = divePressed || (actionsAsset == null && Input.GetKeyDown(diveFallbackKey));
         if (!isDiving && !isSliding && diveDown && Horizontal(targetHVel).magnitude > 0.1f)
             StartDive();
@@ -199,21 +202,28 @@ public class SimpleFPSControllerActions : MonoBehaviour
         // State horizontal velocity
         if (isDiving)
         {
+            // Maintain strong forward for a short commitment, then taper slightly
             diveTimer -= Time.deltaTime;
             Vector3 hv = Vector3.Lerp(diveVel, Vector3.zero,
                 (1f - Mathf.Clamp01(diveTimer / diveDuration)) * 0.15f);
             velocity.x = hv.x; velocity.z = hv.z;
+
+            // End of dive state (you may prefer to also require grounded here)
             if (diveTimer <= 0f) EndDive();
         }
         else if (isSliding)
         {
+            // Slide friction toward zero
             slideTimer -= Time.deltaTime;
             slideVel = Vector3.MoveTowards(slideVel, Vector3.zero, slideFriction * Time.deltaTime);
             velocity.x = slideVel.x; velocity.z = slideVel.z;
+
+            // End slide when timer runs out or we leave ground
             if (slideTimer <= 0f || !grounded) EndSlide();
         }
         else
         {
+            // Normal locomotion
             velocity.x = targetHVel.x; velocity.z = targetHVel.z;
         }
 
@@ -227,11 +237,12 @@ public class SimpleFPSControllerActions : MonoBehaviour
         cc.Move(velocity * Time.deltaTime);
     }
 
+    // Enter slide: lower player, set camera height, kick forward momentum
     void StartSlide()
     {
         isSliding = true; slideTimer = slideDuration;
-        SetCapsuleHeight(slideHeight);                       // <— use helper
-        camTargetLocalY = camSlideLocalY;   // <<< lower camera
+        SetCapsuleHeight(slideHeight);                       
+        camTargetLocalY = camSlideLocalY;   
 
         Vector3 hv = Horizontal(velocity);
         if (hv.sqrMagnitude < 0.01f) hv = transform.forward * moveSpeed;
@@ -239,6 +250,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
         velocity.y = -2f;
     }
 
+    // Exit slide, restore standing
     void EndSlide()
     {
         isSliding = false;
@@ -248,63 +260,57 @@ public class SimpleFPSControllerActions : MonoBehaviour
     void StartDive()
     {
         isDiving = true; diveTimer = diveDuration;
-        SetCapsuleHeight(diveHeight);                        // <— use helper
 
-        diveVel = transform.forward * diveForce;
-        velocity.y = Mathf.Max(velocity.y, Mathf.Abs(gravity) * Time.deltaTime * diveUpBias);
-        camTargetLocalY = camDiveLocalY;    // <<< lower camera
+        SetCapsuleHeight(diveHeight);
+        camTargetLocalY = camDiveLocalY; // camera matches dive height
 
+        // Forward burst
         diveVel = transform.forward * diveForce;
+        // Small upward bias to begin a shallow arc
         velocity.y = Mathf.Max(velocity.y, Mathf.Abs(gravity) * Time.deltaTime * diveUpBias);
     }
 
+    // Exit dive: bleed some momentum and restore standing
     void EndDive()
     {
         isDiving = false;
+
         velocity.x = diveVel.x * 0.6f;
         velocity.z = diveVel.z * 0.6f;
+
         TryRestoreCapsule();
     }
 
-    // Try to stand up; retry if blocked
+    // Try to stand up
     void TryRestoreCapsule()
     {
         if (CanStandUp())
         {
-            SetCapsuleHeight(defaultHeight);                 // <— use helper
-            camTargetLocalY = camDefaultLocalY;  // <<< raise camera
+            SetCapsuleHeight(defaultHeight);                
+            camTargetLocalY = camDefaultLocalY;  
         }
         else
         {
             Invoke(nameof(TryRestoreCapsule), 0.1f);
         }
     }
-
+    // Check if the standing capsule would fit (no objects above head)
     bool CanStandUp()
     {
         float radius = cc.radius;
 
-        // World-space centers of the STANDING capsule’s bottom/top spheres,
-        // computed from the *default* height/center (what we want to return to).
-        Vector3 p1 = transform.position + Vector3.up * (defaultCenter.y - defaultHeight * 0.5f + radius); // bottom sphere center
-        Vector3 p2 = transform.position + Vector3.up * (defaultCenter.y + defaultHeight * 0.5f - radius); // top sphere center
+        // Standing capsule endpoints in world space using default height/center
+        Vector3 p1 = transform.position + Vector3.up * (defaultCenter.y - defaultHeight * 0.5f + radius); 
+        Vector3 p2 = transform.position + Vector3.up * (defaultCenter.y + defaultHeight * 0.5f - radius); 
 
-        // Ignore the player's own layer so we don't self-hit (optional but useful)
         int mask = ~(1 << gameObject.layer);
         return !Physics.CheckCapsule(p1, p2, radius, mask, QueryTriggerInteraction.Ignore);
     }
 
-    // Simple on-screen readout
-    void DrawSpeedometer()
-    {
-        float hs = Horizontal(velocity).magnitude;
-        GUI.Label(new Rect(10, 10, 260, 22), $"Speed: {hs:0.0} m/s");
-        GUI.Label(new Rect(10, 30, 260, 22), $"State: {(isDiving ? "DIVE" : isSliding ? "SLIDE" : (cc.isGrounded ? "GROUNDED" : "AIR"))}");
-    }
-
-    // Helpers
+    // Strip vertical component
     static Vector3 Horizontal(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
+    // Keyboard fallback if no Input Actions asset is assigned
     Vector2 ReadKBMoveFallback()
     {
         if (Keyboard.current == null) return Vector2.zero;
@@ -315,16 +321,16 @@ public class SimpleFPSControllerActions : MonoBehaviour
         if (Keyboard.current.wKey.isPressed) iz += 1f;
         return new Vector2(ix, iz);
     }
-
+    // Change CharacterController height while keeping feet position stable
     void SetCapsuleHeight(float newHeight)
     {
-        // Keep the *bottom* of the capsule fixed so we don’t drift into floor/ceiling
+        // World Y of capsule bottom stays fixed so we don't sink/rise
         float bottomWorldY = transform.position.y + (cc.center.y - cc.height * 0.5f);
         float topWorldY = bottomWorldY + newHeight;
 
         cc.height = newHeight;
 
-        // Recompute center.y in local space from new bottom/top
+        // Recenter capsule around the same bottom/top in local space
         float newCenterY = (bottomWorldY + topWorldY) * 0.5f - transform.position.y;
         cc.center = new Vector3(defaultCenter.x, newCenterY, defaultCenter.z);
     }
