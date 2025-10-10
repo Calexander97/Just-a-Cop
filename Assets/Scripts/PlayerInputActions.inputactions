@@ -33,7 +33,7 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "Slide",
+                    "name": "Sprint",
                     "type": "Button",
                     "id": "b860e8d4-db60-46ff-aa79-e3e66b29999f",
                     "expectedControlType": "",
@@ -42,7 +42,7 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "Dive",
+                    "name": "Crouch",
                     "type": "Button",
                     "id": "97d555b6-a5f1-4dfc-a76b-a9cfdbb6abf6",
                     "expectedControlType": "",
@@ -132,22 +132,22 @@
                 {
                     "name": "",
                     "id": "8a87c37d-7390-441a-b695-992b4efddba7",
-                    "path": "<Keyboard>/leftCtrl",
+                    "path": "<Keyboard>/leftShift",
                     "interactions": "Press",
                     "processors": "",
                     "groups": "",
-                    "action": "Slide",
+                    "action": "Sprint",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
                 {
                     "name": "",
                     "id": "5abe5744-701f-47fa-83b4-07928d11ad65",
-                    "path": "<Keyboard>/leftAlt",
+                    "path": "<Keyboard>/leftCtrl",
                     "interactions": "Press",
                     "processors": "",
                     "groups": "",
-                    "action": "Dive",
+                    "action": "Crouch",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

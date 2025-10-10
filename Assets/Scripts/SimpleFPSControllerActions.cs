@@ -17,6 +17,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
     public InputActionAsset actionsAsset;     
     public string actionMapName = "Player";   
     InputAction moveAction, lookAction, jumpAction, slideAction, diveAction;
+    InputAction sprintAction, crouchAction;
 
     [Header("Camera Height")]
     public float eyeLerpSpeed = 12f;          // how fast the camera moves to new height
@@ -39,6 +40,20 @@ public class SimpleFPSControllerActions : MonoBehaviour
     public float gravity = -18f;
     public float jumpHeight = 1.2f;
 
+ 
+    // Sprint/Crouch
+    [Header("Sprint/Crouch")]
+    public float sprintMultiplier = 1.35f; // speed boost when sprinting
+    public float crouchHeight = 0.5f;      // crouch (used only while sliding start press)
+    public float minSlideSpeed = 2.0f;     // need this ground speed to be allowed to slide
+    public float minDiveSpeed = 2.0f;     // need this horizontal speed to be allowed to dive
+
+    // Dive feel
+    [Header("Dive Feel")]
+    public float diveUpVelocity = 4.5f;    // upward hop at dive start (overrides bias)
+    public bool diveEndsOnlyOnLanding = true; // stay “in-dive” until you touch ground
+
+
     // Slide
     [Header("Slide")]
     public KeyCode slideFallbackKey = KeyCode.LeftControl;  
@@ -54,6 +69,11 @@ public class SimpleFPSControllerActions : MonoBehaviour
     public float diveUpBias = 0.3f;
     public float diveDuration = 0.35f;
     public float diveHeight = 1.2f;
+
+    // Landing behavior
+    bool wasGrounded;
+    bool showProneThisFrame; // for 1-frame prone camera at landing
+
 
 
     // Runtime state
@@ -80,11 +100,13 @@ public class SimpleFPSControllerActions : MonoBehaviour
         defaultHeight = cc.height;
         defaultCenter = cc.center;
 
+        wasGrounded = true;
         camDefaultLocalY = playerCam ? playerCam.transform.localPosition.y : 0f;
 
         // Camera should follow the capsule height change by the same amount
         camSlideLocalY = camDefaultLocalY - (defaultHeight - slideHeight);
         camDiveLocalY = camDefaultLocalY - (defaultHeight - diveHeight);
+        float camCrouchLocalY = camDefaultLocalY - (defaultHeight - crouchHeight);
 
         camTargetLocalY = camDefaultLocalY;
     }
@@ -108,8 +130,8 @@ public class SimpleFPSControllerActions : MonoBehaviour
         moveAction = map.FindAction("Move", true);
         lookAction = map.FindAction("Look", true);
         jumpAction = map.FindAction("Jump", true);
-        slideAction = map.FindAction("Slide", true);
-        diveAction = map.FindAction("Dive", true);
+        sprintAction = map.FindAction("Sprint", true);
+        crouchAction = map.FindAction("Crouch", true);
 
         moveAction.performed += c => moveInput = c.ReadValue<Vector2>();
         moveAction.canceled += _ => moveInput = Vector2.zero;
@@ -118,9 +140,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
         lookAction.canceled += _ => lookInput = Vector2.zero;
 
         jumpAction.performed += _ => jumpPressed = true;
-        slideAction.performed += _ => slidePressed = true;
-        diveAction.performed += _ => divePressed = true;
-
+       
         map.Enable();
     }
 
@@ -135,6 +155,20 @@ public class SimpleFPSControllerActions : MonoBehaviour
     {
         HandleLook();
         HandleMove();
+
+        bool groundedNow = cc.isGrounded;
+
+        // If player landed while diving, show camera at dive height for 1 frame
+        showProneThisFrame = false;
+        if (groundedNow && !wasGrounded && isDiving)
+        {
+            camTargetLocalY = camDiveLocalY;   // one frame at prone height
+            showProneThisFrame = true;
+        }
+        wasGrounded = groundedNow;
+
+        // After we set camTargetLocalY for prone frame, EndDive() will run (or already ran)
+        // and TryRestoreCapsule() will restore standing + cam to default next frame.
 
         if (playerCam)
         {
@@ -171,6 +205,9 @@ public class SimpleFPSControllerActions : MonoBehaviour
         bool grounded = cc.isGrounded;
         if (grounded && velocity.y < 0f) velocity.y = -2f;
 
+        bool sprintHeld = Held(sprintAction);
+        bool crouchHeld = Held(crouchAction);
+
         // Read move (actions or KB fallback)
         Vector2 mv = (actionsAsset != null && moveAction != null)
             ? moveInput
@@ -186,30 +223,51 @@ public class SimpleFPSControllerActions : MonoBehaviour
         Vector3 targetHVel = Vector3.Lerp(
             Horizontal(velocity),
             wishDir * moveSpeed,
-            control * acceleration * Time.deltaTime
+           (grounded ? 1f : airControl) * acceleration * Time.deltaTime
         );
 
-        // Slide start (requires some speed and ground contact)
-        bool slideDown = slidePressed || (actionsAsset == null && Input.GetKeyDown(slideFallbackKey));
-        if (!isSliding && !isDiving && grounded && slideDown && Horizontal(velocity).magnitude > 2f)
-            StartSlide();
+        // Edges for responding actions
+        bool crouchDownEdge = EdgeDown(crouchAction, ref prevCrouchHeld);
+        bool jumpDownEdge = EdgeDown(jumpAction, ref prevJumpHeld);
 
-        // Dive start (requires some intended motion)
-        bool diveDown = divePressed || (actionsAsset == null && Input.GetKeyDown(diveFallbackKey));
-        if (!isDiving && !isSliding && diveDown && Horizontal(targetHVel).magnitude > 0.1f)
-            StartDive();
+        float hSpeed = Horizontal(velocity).magnitude;
+        float intendedHSpeed = Horizontal(targetHVel).magnitude;
+
+        // Slide: must be grounded, sprinting, press crouch, have some speed
+        bool wantSlide = grounded && sprintHeld && crouchDownEdge && hSpeed > minSlideSpeed;
+
+        // Dive: sprinting + jump, some intended speed (use targetHVel so player can dive from standstill if pressing W)
+        bool wantDive = sprintHeld && jumpDownEdge && intendedHSpeed > minDiveSpeed;
+
+        if (!isSliding && !isDiving && wantSlide) StartSlide();
+        if (!isDiving && !isSliding && wantDive) StartDive();
+
+        // Sprint Speed
+        float topSpeed = moveSpeed * (sprintHeld ? sprintMultiplier : 1f);
 
         // State horizontal velocity
         if (isDiving)
         {
-            // Maintain strong forward for a short commitment, then taper slightly
-            diveTimer -= Time.deltaTime;
-            Vector3 hv = Vector3.Lerp(diveVel, Vector3.zero,
-                (1f - Mathf.Clamp01(diveTimer / diveDuration)) * 0.15f);
-            velocity.x = hv.x; velocity.z = hv.z;
+            // Commitment timer 
+            if (diveTimer > 0f) diveTimer -= Time.deltaTime;
 
-            // End of dive state (you may prefer to also require grounded here)
-            if (diveTimer <= 0f) EndDive();
+            // Maintain forward burst based on recorded diveVel, lightly taper after commitment
+            Vector3 hv = (diveTimer > 0f)
+                ? diveVel
+                : Vector3.Lerp(diveVel, Vector3.zero, 0.12f * Time.deltaTime);
+
+            velocity.x = hv.x;
+            velocity.z = hv.z;
+
+            // End: either timer or preferably landing after timer
+            if (diveEndsOnlyOnLanding)
+            {
+                if (diveTimer <= 0f && grounded) EndDive();
+            }
+            else
+            {
+                if (diveTimer <= 0f) EndDive();
+            }
         }
         else if (isSliding)
         {
@@ -334,6 +392,18 @@ public class SimpleFPSControllerActions : MonoBehaviour
         float newCenterY = (bottomWorldY + topWorldY) * 0.5f - transform.position.y;
         cc.center = new Vector3(defaultCenter.x, newCenterY, defaultCenter.z);
     }
+
+    bool Held(InputAction a) => a != null && a.IsPressed();
+
+    bool EdgeDown(InputAction a, ref bool prev)
+    {
+        bool cur = a != null && a.IsPressed();
+        bool down = cur && !prev;
+        prev = cur;
+        return down;
+    }
+
+    bool prevCrouchHeld, prevSprintHeld, prevJumpHeld;
 }
 
 
