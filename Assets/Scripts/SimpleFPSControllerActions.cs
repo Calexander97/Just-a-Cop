@@ -21,10 +21,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
     [Header("Camera Height")]
     public float eyeLerpSpeed = 12f;          // how fast the camera moves to new height
-    float camDefaultLocalY;                   // camera Y when standing
-    float camSlideLocalY;                     // camera Y when sliding
-    float camDiveLocalY;                      // camera Y when diving
-    float camTargetLocalY;                    // current camera Y target
+    float camDefaultLocalY, camSlideLocalY, camDiveLocalY, camTargetLocalY, camCrouchLocalY ;                   // camera Y when standing
 
     // Look
     [Header("Look")]
@@ -76,7 +73,8 @@ public class SimpleFPSControllerActions : MonoBehaviour
     Vector3 velocity, slideVel, diveVel;
     float defaultHeight;
     Vector3 defaultCenter;
-    bool isSliding, isDiving;
+    bool isSliding, isDiving, isCrouching;
+    bool raiseCameraNextFrame;
     float slideTimer, diveTimer;
 
     // Stored Inputs
@@ -100,7 +98,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
         // Camera should follow the capsule height change by the same amount
         camSlideLocalY = camDefaultLocalY - (defaultHeight - slideHeight);
         camDiveLocalY = camDefaultLocalY - (defaultHeight - diveHeight);
-
+        camCrouchLocalY = camDefaultLocalY - (defaultHeight - crouchHeight);
         camTargetLocalY = camDefaultLocalY;
     }
 
@@ -158,6 +156,12 @@ public class SimpleFPSControllerActions : MonoBehaviour
         }
         wasGrounded = groundedNow;
 
+        if (raiseCameraNextFrame && cc.isGrounded && !isDiving && !isSliding && !isCrouching)
+        {
+            camTargetLocalY = camDefaultLocalY;
+            raiseCameraNextFrame = false;
+        }
+
         // After we set camTargetLocalY for prone frame, EndDive() will run (or already ran)
         // and TryRestoreCapsule() will restore standing + cam to default next frame.
 
@@ -198,6 +202,15 @@ public class SimpleFPSControllerActions : MonoBehaviour
         bool crouchHeld = Held(crouchAction);
         bool crouchDownEdge = EdgeDown(crouchAction, ref prevCrouchHeld);
         bool jumpDownEdge = EdgeDown(jumpAction, ref prevJumpHeld);
+
+        // Crouch (hold to stay low; not during slide/dive)
+        if (!isSliding && !isDiving)
+        {
+            if (crouchHeld && !isCrouching)
+                StartCrouch();
+            else if (!crouchHeld && isCrouching)
+                TryEndCrouch();  // stand if headroom
+        }
 
         // Sprint speed
         float topSpeed = moveSpeed * (sprintHeld ? sprintMultiplier : 1f);
@@ -283,6 +296,24 @@ public class SimpleFPSControllerActions : MonoBehaviour
         cc.Move(velocity * Time.deltaTime);
     }
 
+    void StartCrouch()
+    {
+        isCrouching = true;
+        SetCapsuleHeight(crouchHeight);
+        camTargetLocalY = camCrouchLocalY;
+    }
+
+    void TryEndCrouch()
+    {
+        if (CanStandUp())
+        {
+            isCrouching = false;
+            SetCapsuleHeight(defaultHeight);
+            camTargetLocalY = camDefaultLocalY;
+        }
+        // else stay crouched; will retry when player releases under headroom
+    }
+
     // Enter slide: lower player, set camera height, kick forward momentum
     void StartSlide()
     {
@@ -300,6 +331,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
     void EndSlide()
     {
         isSliding = false;
+        if (Held(crouchAction)) StartCrouch();
         TryRestoreCapsule();
     }
 
@@ -331,6 +363,10 @@ public class SimpleFPSControllerActions : MonoBehaviour
         velocity.z = diveVel.z * 0.6f;
 
         TryRestoreCapsule();         // will also set camTargetLocalY to default (unless blocked)
+
+        // If crouch is held, stay crouched; otherwise schedule a raise next frame
+        if (Held(crouchAction)) StartCrouch();
+        else raiseCameraNextFrame = true;
     }
 
     // Try to stand up
@@ -339,7 +375,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
         if (CanStandUp())
         {
             SetCapsuleHeight(defaultHeight);         
-            if (!showProneThisFrame)
+            if (!showProneThisFrame && isCrouching)
                 camTargetLocalY = camDefaultLocalY;  
         }
         else
