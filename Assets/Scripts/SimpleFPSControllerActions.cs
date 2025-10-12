@@ -388,11 +388,14 @@ public class SimpleFPSControllerActions : MonoBehaviour
         cc.center = new Vector3(defaultCenter.x, newCenterY, defaultCenter.z);
     }
 
-    bool Held(InputAction a) => a != null && a.IsPressed();
+    bool Held(InputAction a)
+    {
+        return a != null && a.ReadValue<float>() > 0.5f;
+    }
 
     bool EdgeDown(InputAction a, ref bool prev)
     {
-        bool cur = a != null && a.IsPressed();
+        bool cur = a != null && a.ReadValue<float>() > 0.5f;
         bool down = cur && !prev;
         prev = cur;
         return down;
