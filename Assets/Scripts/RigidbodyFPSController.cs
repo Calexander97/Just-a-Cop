@@ -13,6 +13,12 @@ public class RigidbodyFPSController : MonoBehaviour
     public string actionMapName = "Player";
     string _lastAction;
 
+    // DEBUG additions 
+    Vector2 _lastMoveDir;
+    const float _moveLogThreshold = 0.35f;
+    bool _callbacksBound;
+    
+
     // Input Action   
     InputAction moveAction, lookAction, jumpAction, sprintAction, crouchAction;
 
@@ -110,6 +116,17 @@ public class RigidbodyFPSController : MonoBehaviour
 
         map.Enable();
 
+        //  DEBUG subscriptions (input-based logging) 
+        if (!_callbacksBound)
+        {
+            if (sprintAction != null) { sprintAction.started += OnSprintStarted; sprintAction.canceled += OnSprintCanceled; }
+            if (crouchAction != null) { crouchAction.started += OnCrouchStarted; crouchAction.canceled += OnCrouchCanceled; }
+            if (jumpAction != null) { jumpAction.started += OnJumpStarted; }
+            if (moveAction != null) { moveAction.performed += OnMovePerformed; }
+            _callbacksBound = true;
+        }
+        // 
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
@@ -117,6 +134,17 @@ public class RigidbodyFPSController : MonoBehaviour
     void OnDisable()
     {
         if (actionsAsset != null) actionsAsset.Disable();
+
+        //  DEBUG unsubscriptions 
+        if (_callbacksBound)
+        {
+            if (sprintAction != null) { sprintAction.started -= OnSprintStarted; sprintAction.canceled -= OnSprintCanceled; }
+            if (crouchAction != null) { crouchAction.started -= OnCrouchStarted; crouchAction.canceled -= OnCrouchCanceled; }
+            if (jumpAction != null) { jumpAction.started -= OnJumpStarted; }
+            if (moveAction != null) { moveAction.performed -= OnMovePerformed; }
+            _callbacksBound = false;
+        }
+       
     }
 
     // Update is called once per frame
@@ -208,23 +236,7 @@ public class RigidbodyFPSController : MonoBehaviour
         bool crouchDownEdge = EdgeDown(crouchAction, ref prevCrouchHeld);
         bool jumpDownEdge = EdgeDown(jumpAction, ref prevJumpHeld);
 
-        bool sprintHeld = IsHeld(sprintAction);
-
-        // Movement direction label (only when it changes)
-        string moveLabel = null;
-        if (mv.sqrMagnitude > 0.04f)
-        {
-            string dir = Mathf.Abs(mv.y) >= Mathf.Abs(mv.x)
-                ? (mv.y > 0 ? "FORWARD" : "BACK")
-                : (mv.x > 0 ? "RIGHT" : "LEFT");
-
-            moveLabel = sprintHeld ? $"SPRINT {dir}" : $"WALK {dir}";
-        }
-        else if (grounded && !isSliding && !isDiving && !isCrouching)
-        {
-            moveLabel = "IDLE";
-        }
-        LogActionIfChanged(moveLabel);
+        // (Removed per-frame movement label spam)
 
         //Crouch (Hold)
         if (!isSliding && !isDiving)
@@ -430,8 +442,33 @@ public class RigidbodyFPSController : MonoBehaviour
             Debug.Log($"Action: {label}");
         }
     }
+
+    // ===== DEBUG input handlers =====
+    void OnSprintStarted(InputAction.CallbackContext _) => Debug.Log("INPUT: Sprint Down");
+    void OnSprintCanceled(InputAction.CallbackContext _) => Debug.Log("INPUT: Sprint Up");
+    void OnCrouchStarted(InputAction.CallbackContext _) => Debug.Log("INPUT: Crouch Down");
+    void OnCrouchCanceled(InputAction.CallbackContext _) => Debug.Log("INPUT: Crouch Up");
+    void OnJumpStarted(InputAction.CallbackContext _) => Debug.Log("INPUT: Jump Pressed");
+
+    // Move: log direction changes only
+    void OnMovePerformed(InputAction.CallbackContext ctx)
+    {
+        var v = ctx.ReadValue<Vector2>();
+        if (v.magnitude < _moveLogThreshold)
+        {
+            if (_lastMoveDir.magnitude >= _moveLogThreshold)
+                Debug.Log("INPUT: Move Neutral");
+            _lastMoveDir = v;
+            return;
+        }
+
+        string dir = Mathf.Abs(v.y) >= Mathf.Abs(v.x) ? (v.y > 0 ? "Forward" : "Back")
+                                                      : (v.x > 0 ? "Right" : "Left");
+        string lastDir = Mathf.Abs(_lastMoveDir.y) >= Mathf.Abs(_lastMoveDir.x) ? (_lastMoveDir.y > 0 ? "Forward" : "Back")
+                                                                                : (_lastMoveDir.x > 0 ? "Right" : "Left");
+        if (dir != lastDir)
+            Debug.Log($"INPUT: Move {dir}");
+
+        _lastMoveDir = v;
+    }
 }
-    
-
-
-
