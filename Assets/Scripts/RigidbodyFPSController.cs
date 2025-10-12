@@ -11,6 +11,7 @@ public class RigidbodyFPSController : MonoBehaviour
     public Camera playerCam;
     public InputActionAsset actionsAsset;
     public string actionMapName = "Player";
+    string _lastAction;
 
     // Input Action   
     InputAction moveAction, lookAction, jumpAction, sprintAction, crouchAction;
@@ -25,7 +26,6 @@ public class RigidbodyFPSController : MonoBehaviour
     public float sprintMultiplier = 1.35f;
     public float acceleration = 30f;    // how fast player approaches desired velocity
     public float maxGroundSlope = 50f;  // degrees
-    [Range(0f, 1f)] public float airControl = 0.15f; // influence while airborne
     public float jumpHeight = 1.2f;     // desired jump apex height
 
     [Header("Heights & Camera")]
@@ -58,7 +58,6 @@ public class RigidbodyFPSController : MonoBehaviour
     // Runtime
     Rigidbody rb;
     CapsuleCollider capsule;
-    readonly Collider[] _overlapBuf = new Collider[8];
 
     float yaw, pitch;
     Vector3 desiredVelXZ;     // target horizontal velocity
@@ -167,25 +166,33 @@ public class RigidbodyFPSController : MonoBehaviour
     // Ground Check
     void UpdateGrounding()
     {
-        // Compute feet point robustly from collider geometry
-        Vector3 feet = transform.position + Vector3.up * (capsule.center.y - capsule.height * 0.5f);
+        // Build a capsule matching the current CapsuleCollider in world space
+        float r = capsule.radius - 0.01f; // tiny shrink to avoid self-hits
+        Vector3 c = transform.position + capsule.center;
+        Vector3 top = c + Vector3.up * (capsule.height * 0.5f - capsule.radius);
+        Vector3 bottom = c - Vector3.up * (capsule.height * 0.5f - capsule.radius);
 
-        // Start the cast a little above the feet, outside the capsule shell
-        Vector3 origin = feet + Vector3.up * (groundCheckRadius + 0.02f);
+        // Ignore ONLY the player's own layer so any solid surface can be "ground"
+        int notPlayerMask = ~(1 << gameObject.layer);
 
-        grounded = Physics.SphereCast(
-            origin,
-            groundCheckRadius,
-            Vector3.down,
+        grounded = Physics.CapsuleCast(
+            top, bottom, r, Vector3.down,
             out RaycastHit hit,
-            groundCheckDistance,
-            groundMask,
+            groundCheckDistance + 0.02f,
+            notPlayerMask,
             QueryTriggerInteraction.Ignore
         );
 
-        // Optional: store normal if you want it later
-        // groundNormal = grounded ? hit.normal : Vector3.up;
+        groundNormal = grounded ? hit.normal : Vector3.up;
+
+        // Optional: reject very steep "ground"
+        if (grounded)
+        {
+            float slopeAngle = Vector3.Angle(groundNormal, Vector3.up);
+            if (slopeAngle > maxGroundSlope) grounded = false;
+        }
     }
+
 
     // Movement (Physics)
     void HandleMovePhysics()
@@ -200,6 +207,24 @@ public class RigidbodyFPSController : MonoBehaviour
         crouchHeldThisFrame = IsHeld(crouchAction);
         bool crouchDownEdge = EdgeDown(crouchAction, ref prevCrouchHeld);
         bool jumpDownEdge = EdgeDown(jumpAction, ref prevJumpHeld);
+
+        bool sprintHeld = IsHeld(sprintAction);
+
+        // Movement direction label (only when it changes)
+        string moveLabel = null;
+        if (mv.sqrMagnitude > 0.04f)
+        {
+            string dir = Mathf.Abs(mv.y) >= Mathf.Abs(mv.x)
+                ? (mv.y > 0 ? "FORWARD" : "BACK")
+                : (mv.x > 0 ? "RIGHT" : "LEFT");
+
+            moveLabel = sprintHeld ? $"SPRINT {dir}" : $"WALK {dir}";
+        }
+        else if (grounded && !isSliding && !isDiving && !isCrouching)
+        {
+            moveLabel = "IDLE";
+        }
+        LogActionIfChanged(moveLabel);
 
         //Crouch (Hold)
         if (!isSliding && !isDiving)
@@ -246,7 +271,7 @@ public class RigidbodyFPSController : MonoBehaviour
             // Add a bit of drag during slide for decay
             vel.x *= (1f - 0.02f);
             vel.z *= (1f - 0.02f);
-            if (slideTimer <= 0f || !grounded) EndSlide();
+            if (slideTimer <= 0f) EndSlide();
         }
         else
         {
@@ -254,7 +279,7 @@ public class RigidbodyFPSController : MonoBehaviour
             Vector3 currentXZ = Horizontal(vel);
             Vector3 desiredXZ = wishDir * topSpeed;
 
-            float control = grounded ? 1f : airControl;
+            float control = grounded ? 1f : 0.15f; // minimal air control: 15%
             Vector3 accelVec = (desiredXZ - currentXZ) * (acceleration * control);
             rb.AddForce(new Vector3(accelVec.x, 0f, accelVec.z), ForceMode.Acceleration);
 
@@ -263,6 +288,7 @@ public class RigidbodyFPSController : MonoBehaviour
             {
                 float upImpulse = Mathf.Sqrt(2f * Mathf.Abs(Physics.gravity.y) * jumpHeight);
                 vel.y = upImpulse;
+                Debug.Log("Action: JUMP");
             }
         }
 
@@ -283,6 +309,7 @@ public class RigidbodyFPSController : MonoBehaviour
         // Add a forward impulse for punch
         Vector3 forward = transform.forward;
         rb.AddForce(forward * slideImpulse, ForceMode.VelocityChange);
+        LogActionIfChanged("SLIDE");
     }
 
     void EndSlide()
@@ -295,6 +322,7 @@ public class RigidbodyFPSController : MonoBehaviour
         // Stay crouched if the key is still held; else stand up (if headroom)
         if (crouchHeldThisFrame) StartCrouch();
         else TryRestoreStanding();
+        LogActionIfChanged("SLIDE END");
     }
 
     // Dive
@@ -313,13 +341,16 @@ public class RigidbodyFPSController : MonoBehaviour
         // Apply forward + up impulses
         rb.AddForce(dir * diveForwardImpulse, ForceMode.VelocityChange);
         rb.AddForce(Vector3.up * diveUpImpulse, ForceMode.VelocityChange);
+        LogActionIfChanged("DIVE");
     }
 
     void EndDive()
     {
         isDiving = false;
-        if (IsHeld(crouchAction)) StartCrouch();
+        // After prone flash, stand unless crouch is held
+        if (crouchHeldThisFrame) StartCrouch();
         else { TryRestoreStanding(); raiseCameraNextFrame = true; }
+        LogActionIfChanged("DIVE END");
     }
 
     // Crouch
@@ -328,6 +359,8 @@ public class RigidbodyFPSController : MonoBehaviour
         isCrouching = true;
         SetCapsuleHeight(crouchHeight);
         camTargetLocalY = camCrouchLocalY;
+        LogActionIfChanged("CROUCH");
+
     }
 
     void TryEndCrouch()
@@ -337,6 +370,7 @@ public class RigidbodyFPSController : MonoBehaviour
             isCrouching = false;
             SetCapsuleHeight(standingHeight);
             camTargetLocalY = camDefaultLocalY;
+            LogActionIfChanged("STAND");
         }
         // else remain crouched until there is headroom
     }
@@ -357,7 +391,7 @@ public class RigidbodyFPSController : MonoBehaviour
     // Helpers
     static Vector3 Horizontal(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
-    bool IsHeld(InputAction a) => a != null && a.IsPressed();
+    bool IsHeld(InputAction a) => a != null && a.ReadValue<float>() > 0.5f;
 
     bool EdgeDown(InputAction a, ref bool prev)
     {
@@ -378,28 +412,24 @@ public class RigidbodyFPSController : MonoBehaviour
 
     bool CanStandUp()
     {
-        float r = capsule.radius;
-
-        // World-space feet position (works regardless of center/height)
-        Vector3 feet = transform.position + Vector3.up * (capsule.center.y - capsule.height * 0.5f);
-
-        // Build a *standing* capsule to test headroom, using the same feet point
-        Vector3 bottom = feet + Vector3.up * r;                       // bottom sphere center
-        Vector3 top = feet + Vector3.up * (standingHeight - r);    // top sphere center
-
-        int hits = Physics.OverlapCapsuleNonAlloc(
-            bottom, top, r, _overlapBuf, groundMask, QueryTriggerInteraction.Ignore
-        );
-
-        for (int i = 0; i < hits; i++)
-        {
-            var col = _overlapBuf[i];
-            if (!col || col == capsule || col.isTrigger) continue;    // ignore self & triggers
-            return false;                                             // something solid above head
-        }
-        return true;
+        float radius = capsule.radius;
+        Vector3 pos = transform.position;
+        // Build a standing capsule in world space to test
+        Vector3 p1 = pos + Vector3.up * ((standingHeight * 0.5f) - radius);
+        Vector3 p2 = pos + Vector3.up * (radius);
+        int notPlayerMask = ~(1 << gameObject.layer);
+        return !Physics.CheckCapsule(p1, p2, radius, notPlayerMask, QueryTriggerInteraction.Ignore);
     }
 
+    void LogActionIfChanged(string label)
+    {
+        if (label == null) return;
+        if (label != _lastAction)
+        {
+            _lastAction = label;
+            Debug.Log($"Action: {label}");
+        }
+    }
 }
     
 
