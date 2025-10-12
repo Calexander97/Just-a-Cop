@@ -15,9 +15,9 @@ public class SimpleFPSControllerActions : MonoBehaviour
     // Input System
     [Header("Input (Input System)")]
     public InputActionAsset actionsAsset;     
-    public string actionMapName = "Player";   
-    InputAction moveAction, lookAction, jumpAction, slideAction, diveAction;
-    InputAction sprintAction, crouchAction;
+    public string actionMapName = "Player";
+    InputAction moveAction, lookAction, jumpAction, sprintAction, crouchAction;
+ 
 
     [Header("Camera Height")]
     public float eyeLerpSpeed = 12f;          // how fast the camera moves to new height
@@ -48,27 +48,21 @@ public class SimpleFPSControllerActions : MonoBehaviour
     public float minSlideSpeed = 2.0f;     // need this ground speed to be allowed to slide
     public float minDiveSpeed = 2.0f;     // need this horizontal speed to be allowed to dive
 
-    // Dive feel
-    [Header("Dive Feel")]
-    public float diveUpVelocity = 4.5f;    // upward hop at dive start (overrides bias)
-    public bool diveEndsOnlyOnLanding = true; // stay “in-dive” until you touch ground
-
 
     // Slide
     [Header("Slide")]
-    public KeyCode slideFallbackKey = KeyCode.LeftControl;  
     public float slideStartBoost = 1.25f;
     public float slideFriction = 6f;
     public float slideDuration = 0.7f;
     public float slideHeight = 1.2f;
 
     // Dive
-    [Header("Dive")]
-    public KeyCode diveFallbackKey = KeyCode.LeftAlt;       
+    [Header("Dive")]  
     public float diveForce = 12f;
-    public float diveUpBias = 0.3f;
+    public float diveUpVelocity = 4.8f;
     public float diveDuration = 0.35f;
     public float diveHeight = 1.2f;
+    public bool diveEndsOnlyOnLanding = true;
 
     // Landing behavior
     bool wasGrounded;
@@ -87,7 +81,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
     // Stored Inputs
     Vector2 lookInput, moveInput;
-    bool jumpPressed, slidePressed, divePressed;
+    bool prevCrouchHeld, prevSprintHeld, prevJumpHeld;
 
     // Call input data/camera data, set initial camera heights
     void Awake()
@@ -106,7 +100,6 @@ public class SimpleFPSControllerActions : MonoBehaviour
         // Camera should follow the capsule height change by the same amount
         camSlideLocalY = camDefaultLocalY - (defaultHeight - slideHeight);
         camDiveLocalY = camDefaultLocalY - (defaultHeight - diveHeight);
-        float camCrouchLocalY = camDefaultLocalY - (defaultHeight - crouchHeight);
 
         camTargetLocalY = camDefaultLocalY;
     }
@@ -138,8 +131,6 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
         lookAction.performed += c => lookInput = c.ReadValue<Vector2>();
         lookAction.canceled += _ => lookInput = Vector2.zero;
-
-        jumpAction.performed += _ => jumpPressed = true;
        
         map.Enable();
     }
@@ -177,8 +168,6 @@ public class SimpleFPSControllerActions : MonoBehaviour
             playerCam.transform.localPosition = lp;
         }
 
-        
-        jumpPressed = slidePressed = divePressed = false;
     }
 
     // Camera look (yaw on body, pitch on camera)
@@ -207,6 +196,11 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
         bool sprintHeld = Held(sprintAction);
         bool crouchHeld = Held(crouchAction);
+        bool crouchDownEdge = EdgeDown(crouchAction, ref prevCrouchHeld);
+        bool jumpDownEdge = EdgeDown(jumpAction, ref prevJumpHeld);
+
+        // Sprint speed
+        float topSpeed = moveSpeed * (sprintHeld ? sprintMultiplier : 1f);
 
         // Read move (actions or KB fallback)
         Vector2 mv = (actionsAsset != null && moveAction != null)
@@ -218,17 +212,14 @@ public class SimpleFPSControllerActions : MonoBehaviour
         // Convert local input to world direction based on player yaw
         Vector3 wishDir = transform.TransformDirection(new Vector3(mv.x, 0f, mv.y));
 
-        // Lerp current horizontal velocity toward desired, with reduced air control
-        float control = grounded ? 1f : airControl;
+        // Horizontal velocity target
+
         Vector3 targetHVel = Vector3.Lerp(
             Horizontal(velocity),
-            wishDir * moveSpeed,
+            wishDir * topSpeed,
            (grounded ? 1f : airControl) * acceleration * Time.deltaTime
         );
 
-        // Edges for responding actions
-        bool crouchDownEdge = EdgeDown(crouchAction, ref prevCrouchHeld);
-        bool jumpDownEdge = EdgeDown(jumpAction, ref prevJumpHeld);
 
         float hSpeed = Horizontal(velocity).magnitude;
         float intendedHSpeed = Horizontal(targetHVel).magnitude;
@@ -242,8 +233,6 @@ public class SimpleFPSControllerActions : MonoBehaviour
         if (!isSliding && !isDiving && wantSlide) StartSlide();
         if (!isDiving && !isSliding && wantDive) StartDive();
 
-        // Sprint Speed
-        float topSpeed = moveSpeed * (sprintHeld ? sprintMultiplier : 1f);
 
         // State horizontal velocity
         if (isDiving)
@@ -285,9 +274,8 @@ public class SimpleFPSControllerActions : MonoBehaviour
             velocity.x = targetHVel.x; velocity.z = targetHVel.z;
         }
 
-        // Jump (blocked during slide/dive)
-        bool jumpDown = jumpPressed || (actionsAsset == null && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame);
-        if (!isSliding && !isDiving && grounded && jumpDown)
+        // Ground jump (disabled while sliding/diving)
+        if (!isSliding && !isDiving && grounded && jumpDownEdge)
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
         // Gravity + move
@@ -317,18 +305,24 @@ public class SimpleFPSControllerActions : MonoBehaviour
 
     void StartDive()
     {
-        isDiving = true; diveTimer = diveDuration;
+        isDiving = true; 
+        diveTimer = diveDuration;
 
         SetCapsuleHeight(diveHeight);
         camTargetLocalY = camDiveLocalY; // camera matches dive height
 
-        // Forward burst
-        diveVel = transform.forward * diveForce;
-        // Small upward bias to begin a shallow arc
-        velocity.y = Mathf.Max(velocity.y, Mathf.Abs(gravity) * Time.deltaTime * diveUpBias);
+        // Momentum direction from current horizontal velocity (fallback to forward)
+        Vector3 hvNow = Horizontal(velocity);
+        Vector3 dir = hvNow.sqrMagnitude > 0.01f ? hvNow.normalized : transform.forward;
+
+
+        // Strong forward burst in that direction
+        diveVel = dir * diveForce;
+
+        // Upward hop for a visible arc (overrides tiny bias)
+        velocity.y = Mathf.Max(velocity.y, diveUpVelocity);
     }
 
-    // Exit dive: bleed some momentum and restore standing
     void EndDive()
     {
         isDiving = false;
@@ -336,7 +330,7 @@ public class SimpleFPSControllerActions : MonoBehaviour
         velocity.x = diveVel.x * 0.6f;
         velocity.z = diveVel.z * 0.6f;
 
-        TryRestoreCapsule();
+        TryRestoreCapsule();         // will also set camTargetLocalY to default (unless blocked)
     }
 
     // Try to stand up
@@ -344,8 +338,9 @@ public class SimpleFPSControllerActions : MonoBehaviour
     {
         if (CanStandUp())
         {
-            SetCapsuleHeight(defaultHeight);                
-            camTargetLocalY = camDefaultLocalY;  
+            SetCapsuleHeight(defaultHeight);         
+            if (!showProneThisFrame)
+                camTargetLocalY = camDefaultLocalY;  
         }
         else
         {
@@ -402,8 +397,6 @@ public class SimpleFPSControllerActions : MonoBehaviour
         prev = cur;
         return down;
     }
-
-    bool prevCrouchHeld, prevSprintHeld, prevJumpHeld;
 }
 
 

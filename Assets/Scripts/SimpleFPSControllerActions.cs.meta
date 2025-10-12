@@ -3,7 +3,9 @@ guid: 2d6d97e6b5a73874495ea9586374e2ad
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - playerCam: {instanceID: 0}
+  - actionsAsset: {fileID: -944628639613478452, guid: 308a8d85e22a2a64a854a3de2da822dd, type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
