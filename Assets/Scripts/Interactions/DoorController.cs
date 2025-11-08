@@ -31,7 +31,7 @@ public class DoorController : MonoBehaviour
     IEnumerator Move(Vector3 target, bool opening)
     {
         moving = true;
-        while (door.localPosition - target).sqrMagnitude > 0.0001f)
+        while ((door.localPosition - target).sqrMagnitude > 0.0001f)
         {
             door.localPosition = Vector3.MoveTowards(door.localPosition, target, speed * Time.deltaTime);
             yield return null;
