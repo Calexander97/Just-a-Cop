@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 6993413106440575442}
   - component: {fileID: 4071846171317335954}
   - component: {fileID: 6928346968270788099}
+  - component: {fileID: 3217698932730137528}
   m_Layer: 0
   m_Name: pf_key_blue
   m_TagString: Untagged
@@ -28,7 +29,7 @@ Transform:
   m_GameObject: {fileID: 8669188138434196019}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 14.486511, y: 12.5, z: 10.489513}
+  m_LocalPosition: {x: 12.887247, y: 1.12, z: 10.036254}
   m_LocalScale: {x: 0.05, y: 0.05, z: 0.05}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -127,3 +128,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::KeyPickup
   key: {fileID: 11400000, guid: e11d1a00741dcc947af3b8b8a06758d1, type: 2}
   destroyOnPickup: 1
+--- !u!114 &3217698932730137528
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8669188138434196019}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 28c0c027ce5022d46ad723309b77f516, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FloatAndSpin
+  amplitude: 0.15
+  frequency: 1.5
+  phaseOffset: 0
+  degreesPerSecond: {x: 0, y: 90, z: 0}

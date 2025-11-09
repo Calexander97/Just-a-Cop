@@ -12,6 +12,11 @@ public class DoorController : MonoBehaviour
     [SerializeField] bool startsOpen = false;
     [SerializeField] bool locked = false;
 
+    [Header("Audio")]
+    [SerializeField] AudioSource audioSource;  // assign in Inspector
+    [SerializeField] AudioClip sfxOpen;       // thunk / motor start
+    [SerializeField] AudioClip sfxClose;        // clunk at end
+
     Vector3 closedPos, openPos;
     bool isOpen, moving;
 
@@ -31,6 +36,13 @@ public class DoorController : MonoBehaviour
     IEnumerator Move(Vector3 target, bool opening)
     {
         moving = true;
+
+        // Audio Start
+        if (audioSource)
+        {
+            var clip = opening ? sfxOpen : sfxClose;
+            if (clip) audioSource.PlayOneShot(clip);
+        }
         while ((door.localPosition - target).sqrMagnitude > 0.0001f)
         {
             door.localPosition = Vector3.MoveTowards(door.localPosition, target, speed * Time.deltaTime);
