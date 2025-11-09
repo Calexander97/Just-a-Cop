@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class KeyLock : MonoBehaviour
+public class KeyLock : MonoBehaviour, IInteractable
 {
     [SerializeField] string prompt = "[E] Unlock";
     [SerializeField] KeyItemSO requiredKey;
