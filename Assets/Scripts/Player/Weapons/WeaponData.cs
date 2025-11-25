@@ -22,7 +22,7 @@ public class WeaponData : ScriptableObject
 
     [Header("Ammo")]
     public int magazineSize = 9;
-    public int maxRserveAmmo = 90;
+    public int maxReserveAmmo = 90;
     public float reloadTime = 1.2f;
 
     [Header("Accuracy & Spread")]
