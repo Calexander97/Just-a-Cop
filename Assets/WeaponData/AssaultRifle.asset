@@ -12,15 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 93574ddeb942b894bac876daaf61b7ce, type: 3}
   m_Name: AssaultRifle
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
-  weaponName: Handgun
-  weaponType: 1
-  damage: 8
-  isAutomatic: 0
-  fireRate: 4
+  weaponName: Assault Rifle
+  weaponType: 2
+  damage: 13
+  isAutomatic: 1
+  fireRate: 30
   range: 100
-  magazineSize: 6
-  maxRserveAmmo: 90
+  magazineSize: 30
+  maxReserveAmmo: 90
   reloadTime: 1.2
   hipfireSpread: 1.5
   adsSpread: 0.3
-  pellets: 8
+  pellets: 1
