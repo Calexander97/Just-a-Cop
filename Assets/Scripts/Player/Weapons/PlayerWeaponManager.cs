@@ -129,13 +129,43 @@ public class PlayerWeaponManager : MonoBehaviour
 
     public void PickupWeapon(WeaponData newWeapon)
     {
-        // Check if we already have this weapon type; if so, just add ammo
-        foreach (var ws in weaponStates)
+        if (newWeapon == null) return;
+
+        //1. If we already have a weapon of this type, just give reserve ammo
+        for (int i = 0; i < weaponStates.Count; i++)
         {
-            ws.currentReserve = Mathf.Min(ws.currentReserve + newWeapon.maxReserveAmmo, newWeapon.maxReserveAmmo);
-            UpdateHUD();
-            return;
+            var ws = weaponStates[i];
+            if (ws.data.weaponType == newWeapon.weaponType)
+            {
+                // Top-up reserve ammo, clamped to maxReserveAmmo
+                ws.currentReserve = Mathf.Min(ws.currentReserve + newWeapon.maxReserveAmmo,
+                                              newWeapon.maxReserveAmmo);
+
+                // Optionally auto-switch to it when picking up ammo
+                currentWeaponIndex = i;
+
+                UpdateHUD();
+                return;
+            }
         }
+
+        // 2. Otherwis, add as a NEW weapon slot
+        WeaponState newState = new WeaponState()
+        {
+            data = newWeapon,
+            currentMag = newWeapon.magazineSize,
+            currentReserve = newWeapon.maxReserveAmmo
+        };
+
+        weaponStates.Add(newState);
+
+        // Auto-equip the newly picked-up weapon
+        currentWeaponIndex = weaponStates.Count - 1;
+
+        UpdateHUD();
+
+        // Debug (optional)
+        Debug.Log($"Picked up new weapon: {newWeapon.weaponName} (index {currentWeaponIndex})");
     }
 
     private void FireCurrentWeapon()
