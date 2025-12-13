@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.Assertions.Must;
 using UnityEngine.UI;
 public class PlayerWeaponManager : MonoBehaviour
 {
@@ -62,15 +63,22 @@ public class PlayerWeaponManager : MonoBehaviour
         HandleFireInput();
         HandleReloadInput();
     }
-
     #region Input
+    private void HandleWeaponSwitchInput()
+    {
+        // Number keys
+        if (Input.GetKeyDown(KeyCode.Alpha1)) TrySwitchWeapons(0);
+        if (Input.GetKeyDown(KeyCode.Alpha2)) TrySwitchWeapons(1);
+        if (Input.GetKeyDown(KeyCode.Alpha3)) TrySwitchWeapons(2);
+    }
+    
 
     private void HandleWeaponSwitch()
     {
         // Simple number keys: 1,2,3
-        if (Input.GetKeyDown(KeyCode.Alpha1)) TrySwitchWeapon(0);
-        if (Input.GetKeyDown(KeyCode.Alpha2)) TrySwitchWeapon(1);
-        if (Input.GetKeyDown(KeyCode.Alpha3)) TrySwitchWeapon(2);
+        if (Input.GetKeyDown(KeyCode.Alpha1)) TrySwitchWeapons(0);
+        if (Input.GetKeyDown(KeyCode.Alpha2)) TrySwitchWeapons(1);
+        if (Input.GetKeyDown(KeyCode.Alpha3)) TrySwitchWeapons(2);
     }
 
     private void HandleFireInput()
@@ -118,4 +126,129 @@ public class PlayerWeaponManager : MonoBehaviour
         // option: play switch sound/animation here
         UpdateHUD();
     }
+
+    public void PickupWeapon(WeaponData newWeapon)
+    {
+        // Check if we already have this weapon type; if so, just add ammo
+        foreach (var ws in weaponStates)
+        {
+            ws.currentReserve = Mathf.Min(ws.currentReserve + newWeapon.maxReserveAmmo, newWeapon.maxReserveAmmo);
+            UpdateHUD();
+            return;
+        }
+    }
+
+    private void FireCurrentWeapon()
+    {
+        WeaponState current = weaponStates[currentWeaponIndex];
+        WeaponData data = current.data;
+
+        current.currentMag--;
+        nextFireTime = Time.time + 1f / data.fireRate;
+
+        // Decide spread
+        float spread = data.hipfireSpread; // Later change if ADS
+
+        if (data.weaponType == WeaponType.Shotgun && data.pellets > 1)
+        {
+            // Fire multiple pellets
+            for (int i = 0; i < data.pellets; i++)
+            {
+                FireRay(data.damage, spread);
+            }
+        }
+        else
+        {
+            FireRay(data.damage, spread);
+        }
+
+        // Option: Play muzzle flash, animation, sound here
+
+        UpdateHUD();
+    }
+
+    private void FireRay(float damage, float spreadDegrees)
+    {
+        if (playerCamera == null) return;
+
+        Vector3 direction = playerCamera.transform.forward;
+
+        if (spreadDegrees > 0f)
+        {
+            direction = ApplySpread(direction, spreadDegrees);
+        }
+
+        Ray ray = new Ray(firePoint != null ? firePoint.position : playerCamera.transform.position, direction);
+        RaycastHit hit;
+
+        if (Physics.Raycast(ray, out hit, 1000f, hitMask, QueryTriggerInteraction.Ignore))
+        {
+            // Debug draw
+            Debug.DrawLine(ray.origin, hit.point, Color.red, 0.2f);
+
+            IDamageable damageable = hit.collider.GetComponentInParent<IDamageable>();
+            if (damageable != null)
+            {
+                damageable.TakeDamage(damage, hit.point, hit.normal);
+            }
+
+            // Option: Spawn impact effect here
+        }
+    }
+
+    private Vector3 ApplySpread(Vector3 direction, float spreadDegrees)
+    {
+        // Random rotation with cone
+        float spreadRad = spreadDegrees * Mathf.Deg2Rad;
+        float randYaw = Random.Range(-spreadRad, spreadRad);
+        float randPitch = Random.Range(-spreadRad, spreadRad);
+
+        Quaternion yaw = Quaternion.AngleAxis(randYaw * Mathf.Rad2Deg, Vector3.up);
+        Quaternion pitch = Quaternion.AngleAxis(randPitch * Mathf.Rad2Deg, Vector3.right);
+        Quaternion rot = yaw * pitch;
+
+        return rot * direction;
+    }
+
+    private void TryReload()
+    {
+        WeaponState current = weaponStates[currentWeaponIndex];
+        WeaponData data = current.data;
+
+        if (current.currentMag >= data.magazineSize) return;
+        if (current.currentReserve <= 0) return;
+
+        // Start reload coroutine
+        StartCoroutine(ReloadRoutine());
+    }
+
+    private System.Collections.IEnumerator ReloadRoutine()
+    {
+        isReloading = true;
+
+        WeaponState current = weaponStates[currentWeaponIndex];
+        WeaponData data = current.data;
+
+        // Option: play reload animation/sound here
+
+        yield return new WaitForSeconds(data.reloadTime);
+
+        int needed = data.magazineSize - current.currentMag;
+        int toLoad = Mathf.Min(needed, current.currentReserve);
+        current.currentMag += toLoad;
+        current.currentReserve -= toLoad;
+
+        isReloading = false;
+        UpdateHUD();
+    }
+
+    private void UpdateHUD()
+    {
+        if (ammoText == null || weaponStates.Count == 0) return;
+
+        WeaponState current = weaponStates[currentWeaponIndex];
+        ammoText.text = $"{current.currentMag} / {current.currentReserve}";
+    }
+
+    #endregion
 }
