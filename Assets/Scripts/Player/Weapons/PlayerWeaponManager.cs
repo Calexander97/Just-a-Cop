@@ -23,6 +23,8 @@ public class PlayerWeaponManager : MonoBehaviour
     private bool isReloading = false;
     private float nextFireTime = 0f;
 
+    private WeaponRuntime runtime;
+
     [System.Serializable]
     private class WeaponState
     {
@@ -53,6 +55,9 @@ public class PlayerWeaponManager : MonoBehaviour
 
         currentWeaponIndex = Mathf.Clamp(currentWeaponIndex, 0, weaponStates.Count - 1);
         UpdateHUD();
+
+        runtime = GetComponent<WeaponRuntime>();
+        if (runtime == null) runtime = gameObject.AddComponent<WeaponRuntime>();
     }
 
     private void Update()
@@ -173,28 +178,22 @@ public class PlayerWeaponManager : MonoBehaviour
         WeaponState current = weaponStates[currentWeaponIndex];
         WeaponData data = current.data;
 
-        current.currentMag--;
-        nextFireTime = Time.time + 1f / data.fireRate;
+        // Synch runtime with current weapon state
+        runtime.Init(data, current.currentMag, current.currentReserve);
 
-        // Decide spread
-        float spread = data.hipfireSpread; // Later change if ADS
+        // Fire using shared logic
+        bool fired = runtime.TryFire(
+            firePoint != null ? firePoint : playerCamera.transform,
+            playerCamera.transform.forward,
+            hitMask
+        );
 
-        if (data.weaponType == WeaponType.Shotgun && data.pellets > 1)
-        {
-            // Fire multiple pellets
-            for (int i = 0; i < data.pellets; i++)
-            {
-                FireRay(data.damage, spread);
-            }
-        }
-        else
-        {
-            FireRay(data.damage, spread);
-        }
+       // Pull updated ammo back out
+       current.currentMag = runtime.CurrentMag;
+       current.currentReserve = runtime.CurrentReserve;
 
-        // Option: Play muzzle flash, animation, sound here
-
-        UpdateHUD();
+        if (fired)
+            UpdateHUD();
     }
 
     private void FireRay(float damage, float spreadDegrees)
@@ -243,14 +242,24 @@ public class PlayerWeaponManager : MonoBehaviour
     private void TryReload()
     {
         WeaponState current = weaponStates[currentWeaponIndex];
-        WeaponData data = current.data;
 
-        if (current.currentMag >= data.magazineSize) return;
-        if (current.currentReserve <= 0) return;
+        runtime.Init(current.data, current.currentMag, current.currentReserve);
+        runtime.TryReload(this);
 
-        // Start reload coroutine
-        StartCoroutine(ReloadRoutine());
+        // after reload finishes, we need to sync back — simplest is poll in Update while reloading
+        StartCoroutine(SyncAmmoAfterReload(current));
     }
+
+    private System.Collections.IEnumerator SyncAmmoAfterReload(WeaponState ws)
+    {
+        while (runtime.IsReloading)
+            yield return null;
+
+        ws.currentMag = runtime.CurrentMag;
+        ws.currentReserve = runtime.CurrentReserve;
+        UpdateHUD();
+    }
+
 
     private System.Collections.IEnumerator ReloadRoutine()
     {
