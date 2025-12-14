@@ -96,6 +96,7 @@ public class WeaponRuntime : MonoBehaviour
                 damageable.TakeDamage(damage, hit.point, hit.normal);
             }
         }
+
     }
 
     private Vector3 ApplySpread(Vector3 direction, float spreadDegrees)

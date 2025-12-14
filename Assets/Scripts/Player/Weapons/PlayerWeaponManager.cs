@@ -223,6 +223,11 @@ public class PlayerWeaponManager : MonoBehaviour
 
         if (fired)
             UpdateHUD();
+
+        if (fired && viewModelController != null)
+        {
+            viewModelController.PlayRecoil();
+        }
     }
 
     //private void FireRay(float damage, float spreadDegrees)
@@ -281,16 +286,22 @@ public class PlayerWeaponManager : MonoBehaviour
     private void TryReload()
     {
         WeaponState current = weaponStates[currentWeaponIndex];
-        WeaponData data = current.data; // ✅ add this
+        WeaponData data = current.data;
 
         runtime.Init(current.data, current.currentMag, current.currentReserve);
         runtime.TryReload(this);
 
+        // Lower weapon immediately when reload starts
+        if (viewModelController != null)
+            viewModelController.Lower();
+
+        // Reload SFX
         if (audioSource != null && data.reloadSFX != null)
             audioSource.PlayOneShot(data.reloadSFX);
 
         StartCoroutine(SyncAmmoAfterReload(current));
     }
+
 
 
     private System.Collections.IEnumerator SyncAmmoAfterReload(WeaponState ws)
@@ -300,8 +311,14 @@ public class PlayerWeaponManager : MonoBehaviour
 
         ws.currentMag = runtime.CurrentMag;
         ws.currentReserve = runtime.CurrentReserve;
+
+        // Raise weapon back up after reload completes
+        if (viewModelController != null)
+            viewModelController.Raise();
+
         UpdateHUD();
     }
+
 
 
     private System.Collections.IEnumerator ReloadRoutine()

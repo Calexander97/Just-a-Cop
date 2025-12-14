@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6899315350525328798}
   - component: {fileID: 4590008499067596467}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: Pivot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -60,7 +60,7 @@ GameObject:
   - component: {fileID: 2415605694973893550}
   - component: {fileID: 7280060642337409976}
   - component: {fileID: 4611044188632390968}
-  m_Layer: 6
+  m_Layer: 9
   m_Name: Mesh
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -168,7 +168,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 385927176708250575}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: Remington870_viewmodel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -200,7 +200,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4553276327360201235}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: Muzzle
   m_TagString: Untagged
   m_Icon: {fileID: 0}
