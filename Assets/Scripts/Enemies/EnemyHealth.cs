@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class EnemyHealth : MonoBehaviour, IDamageable
 {
-    [SerializeField] private float maxHealth = 100f;
+    [SerializeField] private float maxHealth = 20f;
     private float currentHealth;
 
     private bool isDead = false;

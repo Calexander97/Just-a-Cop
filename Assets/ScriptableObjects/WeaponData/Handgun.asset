@@ -14,13 +14,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WeaponData
   weaponName: Handgun
   weaponType: 0
-  damage: 20
+  damage: 10
   isAutomatic: 0
   fireRate: 4
   range: 100
   magazineSize: 9
-  maxRserveAmmo: 90
+  maxReserveAmmo: 90
   reloadTime: 1.2
   hipfireSpread: 1
   adsSpread: 0.3
   pellets: 1
+  viewModelPrefab: {fileID: 7278827088530375254, guid: d5b0362dfcb655249a1dde0fdf994c1b, type: 3}
+  shootSFX: {fileID: 0}
+  reloadSFX: {fileID: 0}
+  emptySFX: {fileID: 0}
+  muzzleFlashPrefab: {fileID: 0}
+  impactPrefab: {fileID: 0}

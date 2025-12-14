@@ -24,3 +24,9 @@ MonoBehaviour:
   hipfireSpread: 1.5
   adsSpread: 0.3
   pellets: 1
+  viewModelPrefab: {fileID: 6686850788166865115, guid: af00a6a63e8a1c0498fdf47330287d23, type: 3}
+  shootSFX: {fileID: 0}
+  reloadSFX: {fileID: 0}
+  emptySFX: {fileID: 0}
+  muzzleFlashPrefab: {fileID: 0}
+  impactPrefab: {fileID: 0}
