@@ -1,9 +1,10 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Assertions.Must;
 using UnityEngine.UI;
+using TMPro;
 public class PlayerWeaponManager : MonoBehaviour
 {
     [Header("Setup")]
@@ -15,7 +16,17 @@ public class PlayerWeaponManager : MonoBehaviour
     [SerializeField] private List<WeaponData> startingWeapons;
 
     [Header("HUD (optional now)")]
-    [SerializeField] private Text ammoText;
+    [SerializeField] private TMP_Text ammoText;
+    [SerializeField] private TMP_Text weaponNameText; // optional
+
+    [Header("Viewmodel")]
+    [SerializeField] private ViewModelController viewModelController;
+
+    [Header("Audio")]
+    [SerializeField] private AudioSource audioSource;
+
+    [Header("Hitmarker")]
+    [SerializeField] private HitmarkerUI hitmarkerUI; // optional
 
     private int currentWeaponIndex = 0;
     private List<WeaponState> weaponStates = new List<WeaponState>();
@@ -100,9 +111,12 @@ public class PlayerWeaponManager : MonoBehaviour
 
         if (current.currentMag <= 0)
         {
-            // Optional play "empty" click sound
+            if (audioSource != null && data.emptySFX != null)
+                audioSource.PlayOneShot(data.emptySFX);
+
             return;
         }
+
 
         // Fire
         FireCurrentWeapon();
@@ -128,6 +142,7 @@ public class PlayerWeaponManager : MonoBehaviour
         if (index == currentWeaponIndex) return;
 
         currentWeaponIndex = index;
+        EquipCurrentWeaponView();
         // option: play switch sound/animation here
         UpdateHUD();
     }
@@ -166,6 +181,7 @@ public class PlayerWeaponManager : MonoBehaviour
 
         // Auto-equip the newly picked-up weapon
         currentWeaponIndex = weaponStates.Count - 1;
+        EquipCurrentWeaponView();
 
         UpdateHUD();
 
@@ -192,38 +208,61 @@ public class PlayerWeaponManager : MonoBehaviour
        current.currentMag = runtime.CurrentMag;
        current.currentReserve = runtime.CurrentReserve;
 
+        // Muzzle flash (spawn at muzzle)
+        if (data.muzzleFlashPrefab != null && firePoint != null)
+        {
+            Instantiate(data.muzzleFlashPrefab, firePoint.position, firePoint.rotation, firePoint);
+        }
+
+        // Shoot SFX
+        if (audioSource != null && data.shootSFX != null)
+        {
+            audioSource.PlayOneShot(data.shootSFX);
+        }
+
+
         if (fired)
             UpdateHUD();
     }
 
-    private void FireRay(float damage, float spreadDegrees)
-    {
-        if (playerCamera == null) return;
+    //private void FireRay(float damage, float spreadDegrees)
+    //{
+    //    if (playerCamera == null) return;
 
-        Vector3 direction = playerCamera.transform.forward;
+    //    Vector3 direction = playerCamera.transform.forward;
 
-        if (spreadDegrees > 0f)
-        {
-            direction = ApplySpread(direction, spreadDegrees);
-        }
+    //    if (spreadDegrees > 0f)
+    //    {
+    //        direction = ApplySpread(direction, spreadDegrees);
+    //    }
 
-        Ray ray = new Ray(firePoint != null ? firePoint.position : playerCamera.transform.position, direction);
-        RaycastHit hit;
+    //    Ray ray = new Ray(firePoint != null ? firePoint.position : playerCamera.transform.position, direction);
+    //    RaycastHit hit;
 
-        if (Physics.Raycast(ray, out hit, 1000f, hitMask, QueryTriggerInteraction.Ignore))
-        {
-            // Debug draw
-            Debug.DrawLine(ray.origin, hit.point, Color.red, 0.2f);
+    //    if (Physics.Raycast(ray, out hit, 1000f, hitMask, QueryTriggerInteraction.Ignore))
+    //    {
+    //        // Debug draw
+    //        Debug.DrawLine(ray.origin, hit.point, Color.red, 0.2f);
 
-            IDamageable damageable = hit.collider.GetComponentInParent<IDamageable>();
-            if (damageable != null)
-            {
-                damageable.TakeDamage(damage, hit.point, hit.normal);
-            }
+    //        WeaponState current = weaponStates[currentWeaponIndex];
+    //        WeaponData data = current.data;
 
-            // Option: Spawn impact effect here
-        }
-    }
+    //        // Impact VFX
+    //        if (data.impactPrefab != null)
+    //        {
+    //            Instantiate(data.impactPrefab, hit.point, Quaternion.LookRotation(hit.normal));
+    //        }
+
+    //        IDamageable damageable = hit.collider.GetComponentInParent<IDamageable>();
+    //        if (damageable != null)
+    //        {
+    //            damageable.TakeDamage(damage, hit.point, hit.normal);
+
+    //            // Hitmarker feedback
+    //            if (hitmarkerUI != null) hitmarkerUI.Show();
+    //        }
+    //    }
+    //}
 
     private Vector3 ApplySpread(Vector3 direction, float spreadDegrees)
     {
@@ -242,13 +281,17 @@ public class PlayerWeaponManager : MonoBehaviour
     private void TryReload()
     {
         WeaponState current = weaponStates[currentWeaponIndex];
+        WeaponData data = current.data; // ✅ add this
 
         runtime.Init(current.data, current.currentMag, current.currentReserve);
         runtime.TryReload(this);
 
-        // after reload finishes, we need to sync back � simplest is poll in Update while reloading
+        if (audioSource != null && data.reloadSFX != null)
+            audioSource.PlayOneShot(data.reloadSFX);
+
         StartCoroutine(SyncAmmoAfterReload(current));
     }
+
 
     private System.Collections.IEnumerator SyncAmmoAfterReload(WeaponState ws)
     {
@@ -283,11 +326,45 @@ public class PlayerWeaponManager : MonoBehaviour
 
     private void UpdateHUD()
     {
-        if (ammoText == null || weaponStates.Count == 0) return;
+        if (weaponStates.Count == 0) return;
 
         WeaponState current = weaponStates[currentWeaponIndex];
-        ammoText.text = $"{current.currentMag} / {current.currentReserve}";
+
+        if (ammoText != null)
+            ammoText.text = $"{current.currentMag} / {current.currentReserve}";
+
+        if (weaponNameText != null && current.data != null)
+            weaponNameText.text = current.data.weaponName.ToUpper();
     }
+
+
+    private void EquipCurrentWeaponView()
+    {
+        if (viewModelController == null)
+        {
+            Debug.LogWarning("EquipCurrentWeaponView: viewModelController is NULL (not assigned).");
+            return;
+        }
+
+        if (weaponStates.Count == 0) return;
+
+        WeaponState current = weaponStates[currentWeaponIndex];
+        if (current.data == null)
+        {
+            Debug.LogWarning("EquipCurrentWeaponView: current WeaponData is NULL.");
+            return;
+        }
+
+        Debug.Log($"Equipping viewmodel for: {current.data.weaponName}. Prefab: {current.data.viewModelPrefab}");
+
+        viewModelController.Equip(current.data);
+
+        var muzzle = viewModelController.CurrentMuzzle;
+        if (muzzle != null)
+            firePoint = muzzle;
+    }
+
+
 
     #endregion
 }

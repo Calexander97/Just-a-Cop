@@ -29,4 +29,16 @@ public class WeaponData : ScriptableObject
     public float hipfireSpread = 1.0f;  // Degrees
     public float adsSpread = 0.3f;
     public int pellets = 1;             // Shotgun uses >1
+
+    [Header("Viewmodel")]
+    public GameObject viewModelPrefab;      // FPS model prefab
+
+    [Header("SFX")]
+    public AudioClip shootSFX;
+    public AudioClip reloadSFX;
+    public AudioClip emptySFX;
+
+    [Header("VFX")]
+    public GameObject muzzleFlashPrefab;    // small particle prefab
+    public GameObject impactPrefab;         // bullet impact prefab
 }
