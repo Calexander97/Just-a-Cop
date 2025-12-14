@@ -12,11 +12,18 @@ public class WeaponRuntime : MonoBehaviour
 
     public void Init(WeaponData data, int mag, int reserve)
     {
+        bool weaponChanged = Data != data;
+
         Data = data;
         CurrentMag = mag;
         CurrentReserve = reserve;
-        IsReloading = false;
-        nextFireTime = 0f;
+
+        if (weaponChanged)
+        {
+            IsReloading = false;
+            // Optional: you can reset nextFireTime when switching weapons
+            // nextFireTime = 0f;
+        }
     }
 
     public bool CanFire(float timeNow) =>
@@ -102,4 +109,11 @@ public class WeaponRuntime : MonoBehaviour
 
         return (yaw * pitch) * direction;
     }
+
+    public void SyncAmmo(int mag, int reserve)
+    {
+        CurrentMag = mag;
+        CurrentReserve = reserve;
+    }
+
 }

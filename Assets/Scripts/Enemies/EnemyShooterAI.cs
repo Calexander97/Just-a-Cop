@@ -8,6 +8,8 @@ public class EnemyShooterAI : MonoBehaviour
     [Header("Weapon")]
     [SerializeField] private WeaponData weaponData;
     [SerializeField] private Transform firePoint;       // muzzle / shoot origin
+    [SerializeField] private float aiFireMultiplier = 1f; // 1 = normal, 0.5 = slower
+
 
     [Header("Targeting")]
     [SerializeField] private string playerTag = "Player";
@@ -27,6 +29,7 @@ public class EnemyShooterAI : MonoBehaviour
     private NavMeshAgent agent;
 
     // Enemy ammo (owned by AI, not by runtime)
+    private bool isReloading = false;
     private int mag;
     private int reserve;
 
@@ -65,6 +68,13 @@ public class EnemyShooterAI : MonoBehaviour
             return;
         }
 
+        // Require LOS to engage (prevents wallhacks)
+        if (!HasLOS(dist))
+        {
+            StopMove();
+            return;
+        }
+
         // Move toward player until stopping distance
         if (dist > stoppingDistance)
             MoveTo(player.position);
@@ -80,28 +90,31 @@ public class EnemyShooterAI : MonoBehaviour
         // Shoot if LOS
         if (HasLOS(dist))
         {
-            // Sync runtime with current weapon + ammo state
+            // If we are currently reloading, wait until it's done
+            if (runtime.IsReloading || isReloading)
+                return;
+
+            // Sync runtime with current weapon + ammo state (WITHOUT resetting cooldown)
             runtime.Init(weaponData, mag, reserve);
 
-            // Fire forward from firePoint towards player (not transform.forward)
             Vector3 aimDir = (player.position + Vector3.up * aimHeightOffset - firePoint.position).normalized;
 
             bool fired = runtime.TryFire(firePoint, aimDir, hitMask);
 
-            // Pull ammo state back out
+            // Pull ammo state back out after firing attempt
             mag = runtime.CurrentMag;
             reserve = runtime.CurrentReserve;
 
-            // If empty, reload
+            // If empty, start reload ONCE
             if (mag <= 0 && reserve > 0)
             {
+                isReloading = true;
                 runtime.TryReload(this);
-                StartCoroutine(SyncAmmoAfterReload());
+                StartCoroutine(FinishReload());
             }
-
-            // (optional) you can add muzzle flash/audio if fired == true
         }
     }
+
 
     private bool HasLOS(float dist)
     {
@@ -141,4 +154,17 @@ public class EnemyShooterAI : MonoBehaviour
         if (!useNavMesh || agent == null) return;
         agent.isStopped = true;
     }
+
+    private System.Collections.IEnumerator FinishReload()
+    {
+        while (runtime.IsReloading)
+            yield return null;
+
+        // Pull updated ammo back AFTER reload finishes
+        mag = runtime.CurrentMag;
+        reserve = runtime.CurrentReserve;
+
+        isReloading = false;
+    }
+
 }
